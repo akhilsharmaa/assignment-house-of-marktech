@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import or_
 from enum import Enum
 from services.cache import get_cache, set_cache, clear_cache, get_id_list, add_to_id_list, remove_from_id_list 
+import json
 
 router = APIRouter(
     prefix="/task",
@@ -144,6 +145,40 @@ async def view_all_tasks(page: int, task_filter:FilterBase, db: db_dependency, c
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch all tasks. Error: {str(e)}"
         )
+        
+        
+class TaskDeleteBase(BaseModel):
+    id: int
+
+@router.post("/view")
+async def delete_task(task: TaskDeleteBase, db: db_dependency):
+    try:
+        db_task = db.query(Task).filter(Task.id == task.id).first()
+
+        if db_task is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found."
+            )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "id": db_task.id,
+                "title": db_task.title,
+                "description": db_task.description,
+                "status": TaskStatus(db_task.status).value,
+                "priority": Priority(db_task.priority).value            
+            }
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to view task. {str(e)}"
+        )
+
 
 class TaskDeleteBase(BaseModel):
     id: int
