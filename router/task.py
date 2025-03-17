@@ -10,175 +10,196 @@ from utils.users import get_current_user
 from fastapi.responses import JSONResponse
 from sqlalchemy import or_
 from enum import Enum
+from services.cache import get_cache, set_cache, clear_cache, get_id_list, add_to_id_list, remove_from_id_list
 
 router = APIRouter(
     prefix="/task",
     tags=["Task"],
     responses={404: {"description": "Not found"}},
-) 
+)
 
-class PriorityEnum(str, Enum):  
-    HIGH = "high" 
+class PriorityEnum(str, Enum):
+    HIGH = "high"
     LOW = "low"
     MEDIUM = "medium"
-    
-class TaskBase(BaseModel):   
+
+class TaskBase(BaseModel):
     title: str
-    description: str  
+    description: str
     priority: PriorityEnum
 
 @router.post("/new")
-async def create_new_task(task: TaskBase, 
-                              db: db_dependency, 
-                              current_user: Users = Depends(get_current_user)): 
+async def create_new_task(task: TaskBase,
+                          db: db_dependency,
+                          current_user: Users = Depends(get_current_user)):
 
-    db_task = Task( 
-            title=task.title,  
-            description=task.description,   
-            priority=Priority(task.priority.value)
-        )
+    db_task = Task(
+        title=task.title,
+        description=task.description,
+        priority=Priority(task.priority.value)
+    )
 
-
-    try: 
+    try:
         db.add(db_task)
         db.commit()
         db.refresh(db_task)
 
+        # Convert task object to a dictionary
+        task_data = {
+            "id": db_task.id,
+            "title": db_task.title,
+            "description": db_task.description,
+            "priority": Priority(db_task.priority).value
+        }
+
+        # Cache the newly created task and update the ID list
+        await set_cache(f"task:{db_task.id}", task_data)
+        await add_to_id_list(db_task.id)
+
         return JSONResponse(
             status_code=200,
-            content= {
-                "message": "successfully added the task."
+            content={
+                "message": "Successfully added the task."
             }
-        )     
+        )
 
-    except IntegrityError as e: 
-        
+    except IntegrityError:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A task already exists."
         )
-        
+
     except Exception as e:
-        # Catch any other unexpected errors
-        db.rollback()  
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to add new task. Error: {str(e)}"
         )
-        
-
 
 @router.post("/all")
-async def view_all_tasks(page: int, db: db_dependency, current_user: Users = Depends(get_current_user)): 
-    
-    page_size = 10; 
-    offset = (page - 1) * page_size 
+async def view_all_tasks(page: int, db: db_dependency, current_user: Users = Depends(get_current_user)):
+    page_size = 10
+    offset = (page - 1) * page_size
 
     try:
-        
-        db_tasks = db.query(Task).offset(offset).limit(page_size).all()
-        
-        result = []; 
-        for ele in db_tasks: 
-            result.append({
-                    "id": ele.id,
-                    "title": ele.title,
-                    "description": ele.description,  
-                    "priority": Priority(ele.priority).value
-                })
+        # Get task IDs from Redis
+        task_ids = await get_id_list()
+        tasks = []
+
+        # Fetch cached tasks
+        for task_id in task_ids[offset:offset + page_size]:
+            cached_task = await get_cache(f"task:{task_id}")
+            if cached_task:
+                tasks.append(cached_task)
+
+        # Fallback to DB if cache miss
+        if len(tasks) < page_size:
+            
+            db_tasks = db.query(Task).offset(offset).limit(page_size).all()
+            
+            for db_task in db_tasks:
+                task_data = {
+                    "id": db_task.id,
+                    "title": db_task.title,
+                    "description": db_task.description,
+                    "priority": Priority(db_task.priority).value
+                }
+                tasks.append(task_data)
+                await set_cache(f"task:{db_task.id}", task_data)
 
         return JSONResponse(
             status_code=200,
-            content= {
-                "message": "successfully fetched all the tasks.", 
-                "body":  result
+            content={
+                "message": "Successfully fetched all tasks.",
+                "body": tasks
             }
-        )     
+        )
 
     except Exception as e:
-        # Catch any other unexpected errors
-        db.rollback()  
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch all tasks. Error: {str(e)}"
         )
-        
 
-class TaskDeleteBase(BaseModel):   
-    id: int 
-    
+class TaskDeleteBase(BaseModel):
+    id: int
+
 @router.post("/delete")
-async def delete_task(task: TaskDeleteBase, db: db_dependency): 
-
+async def delete_task(task: TaskDeleteBase, db: db_dependency):
     try:
+        db_task = db.query(Task).filter(Task.id == task.id).first()
 
-        db_task = db.query(Task).filter(Task.id == task.id).first();  
-        
         if db_task is None:
-            # Handle the case where the task doesn't exist
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="task not found."
+                detail="Task not found."
             )
-        
-        
+
         db.delete(db_task)
-        db.commit() 
+        db.commit()
+
+        # Remove from cache and ID list
+        await clear_cache(f"task:{task.id}")
+        await remove_from_id_list(task.id)
 
         return JSONResponse(
             status_code=200,
-            content= {
-                "message": "successfully deleted the task."
+            content={
+                "message": "Successfully deleted the task."
             }
-        )     
+        )
 
     except Exception as e:
-        # Catch any other unexpected errors
-        db.rollback()  
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete task. {str(e)}"
         )
 
-
-class TaskEditBase(BaseModel):   
+class TaskEditBase(BaseModel):
     id: int
     title: str
-    description: str  
+    description: str
     priority: PriorityEnum
-    
+
 @router.post("/edit")
-async def edit_task(task: TaskEditBase, db: db_dependency): 
-
+async def edit_task(task: TaskEditBase, db: db_dependency):
     try:
+        db_task = db.query(Task).filter(Task.id == task.id).first()
 
-        db_task = db.query(Task).filter(Task.id == task.id).first(); 
-        
         if db_task is None:
-            # Handle the case where the task doesn't exist
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="task not found."
+                detail="Task not found."
             )
-        
-        db_task.title = task.title; 
-        db_task.description = task.description; 
-        db_task.priority = Priority(task.priority); 
 
-        db.commit() 
+        db_task.title = task.title
+        db_task.description = task.description
+        db_task.priority = Priority(task.priority)
+
+        db.commit()
         db.refresh(db_task)
-        
+
+        # Update cache
+        task_data = {
+            "id": db_task.id,
+            "title": db_task.title,
+            "description": db_task.description,
+            "priority": Priority(db_task.priority).value
+        }
+        await set_cache(f"task:{db_task.id}", task_data)
+
         return JSONResponse(
             status_code=200,
-            content= {
-                "message": "successfully edited the task."
+            content={
+                "message": "Successfully edited the task."
             }
-        )     
+        )
 
     except Exception as e:
-        # Catch any other unexpected errors
-        db.rollback()  
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to edit task. {str(e)}"

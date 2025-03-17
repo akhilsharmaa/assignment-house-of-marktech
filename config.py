@@ -3,7 +3,6 @@ from os.path import join, dirname
 from dotenv import load_dotenv
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
- 
 
 dotenv_path = join(dirname(__file__), '.env')
 load_dotenv(dotenv_path)

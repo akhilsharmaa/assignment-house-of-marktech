@@ -10,7 +10,7 @@ from services.database import engine
 from sqlalchemy.orm import Session
 from services.database import db_dependency
 
- 
+
 router = APIRouter( 
     tags=["Users"],
     responses={404: {"description": "Not found"}},
