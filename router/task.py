@@ -70,10 +70,14 @@ async def create_new_task(task: TaskBase,
 
 
 @router.post("/all")
-async def view_all_tasks(db: db_dependency, current_user: Users = Depends(get_current_user)): 
+async def view_all_tasks(page: int, db: db_dependency, current_user: Users = Depends(get_current_user)): 
+    
+    page_size = 10; 
+    offset = (page - 1) * page_size 
 
     try:
-        db_tasks = db.query(Task).filter().all()
+        
+        db_tasks = db.query(Task).offset(offset).limit(page_size).all()
         
         result = []; 
         for ele in db_tasks: 
@@ -136,8 +140,8 @@ async def delete_task(task: TaskDeleteBase, db: db_dependency):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete task. {str(e)}"
         )
-        
-        
+
+
 class TaskEditBase(BaseModel):   
     id: int
     title: str
