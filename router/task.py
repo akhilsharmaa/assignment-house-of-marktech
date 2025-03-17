@@ -136,3 +136,46 @@ async def delete_task(task: TaskDeleteBase, db: db_dependency):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete task. {str(e)}"
         )
+        
+        
+class TaskEditBase(BaseModel):   
+    id: int
+    title: str
+    description: str  
+    priority: PriorityEnum
+    
+@router.post("/edit")
+async def edit_task(task: TaskEditBase, db: db_dependency): 
+
+    try:
+
+        db_task = db.query(Task).filter(Task.id == task.id).first(); 
+        
+        if db_task is None:
+            # Handle the case where the task doesn't exist
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="task not found."
+            )
+        
+        db_task.title = task.title; 
+        db_task.description = task.description; 
+        db_task.priority = Priority(task.priority); 
+
+        db.commit() 
+        db.refresh(db_task)
+        
+        return JSONResponse(
+            status_code=200,
+            content= {
+                "message": "successfully edited the task."
+            }
+        )     
+
+    except Exception as e:
+        # Catch any other unexpected errors
+        db.rollback()  
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to edit task. {str(e)}"
+        )
