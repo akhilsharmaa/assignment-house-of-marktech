@@ -1,7 +1,13 @@
 import json
 from redis.asyncio import Redis
 
-redis_client = Redis(host="localhost", port=6379, decode_responses=True)
+redis_client = Redis(
+        host='redis-18374.c244.us-east-1-2.ec2.redns.redis-cloud.com',
+        port=18374,
+        decode_responses=True,
+        username="default",
+        password="rESSr20sYMEMFssDwvEQl8Ul4wdZD5g4",
+    )
 
 async def get_cache(key: str):
     cached_data = await redis_client.get(key)
