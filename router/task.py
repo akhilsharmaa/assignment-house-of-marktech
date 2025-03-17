@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Annotated
+from typing import Optional, List
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
@@ -10,7 +10,7 @@ from utils.users import get_current_user
 from fastapi.responses import JSONResponse
 from sqlalchemy import or_
 from enum import Enum
-from services.cache import get_cache, set_cache, clear_cache, get_id_list, add_to_id_list, remove_from_id_list
+from services.cache import get_cache, set_cache, clear_cache, get_id_list, add_to_id_list, remove_from_id_list 
 
 router = APIRouter(
     prefix="/task",
@@ -22,6 +22,10 @@ class PriorityEnum(str, Enum):
     HIGH = "high"
     LOW = "low"
     MEDIUM = "medium"
+
+class TaskStatusEnum(str, Enum):
+    PENDING = "pending" 
+    COMPLETED = "completed"
 
 class TaskBase(BaseModel):
     title: str
@@ -77,8 +81,15 @@ async def create_new_task(task: TaskBase,
             detail=f"Failed to add new task. Error: {str(e)}"
         )
 
+
+
+class FilterBase(BaseModel):
+    status: Optional[List[TaskStatus]] = None
+    priority: Optional[List[Priority]] = None 
+
+
 @router.post("/all")
-async def view_all_tasks(page: int, db: db_dependency, current_user: Users = Depends(get_current_user)):
+async def view_all_tasks(page: int, task_filter:FilterBase, db: db_dependency, current_user: Users = Depends(get_current_user)):
     page_size = 10
     offset = (page - 1) * page_size
 
@@ -96,13 +107,22 @@ async def view_all_tasks(page: int, db: db_dependency, current_user: Users = Dep
         # Fallback to DB if cache miss
         if len(tasks) < page_size:
             
-            db_tasks = db.query(Task).offset(offset).limit(page_size).all()
+            query = db.query(Task)
             
-            for db_task in db_tasks:
+            if task_filter.status:
+                query = query.filter(Task.status.in_(task_filter.status))
+            
+            # Apply priority filter
+            if task_filter.priority:
+                query = query.filter(Task.priority.in_(task_filter.priority))
+                
+            
+            for db_task in query:
                 task_data = {
                     "id": db_task.id,
                     "title": db_task.title,
                     "description": db_task.description,
+                    "status": TaskStatus(db_task.status).value,
                     "priority": Priority(db_task.priority).value
                 }
                 tasks.append(task_data)
@@ -162,6 +182,7 @@ class TaskEditBase(BaseModel):
     id: int
     title: str
     description: str
+    status: TaskStatusEnum
     priority: PriorityEnum
 
 @router.post("/edit")
@@ -177,7 +198,8 @@ async def edit_task(task: TaskEditBase, db: db_dependency):
 
         db_task.title = task.title
         db_task.description = task.description
-        db_task.priority = Priority(task.priority)
+        db_task.priority = Priority(task.priority) 
+        db_task.status = TaskStatus(task.status) 
 
         db.commit()
         db.refresh(db_task)
