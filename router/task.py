@@ -97,12 +97,14 @@ async def view_all_tasks(page: int, task_filter:FilterBase, db: db_dependency, c
         # Get task IDs from Redis
         task_ids = await get_id_list()
         tasks = []
-
-        # Fetch cached tasks
-        for task_id in task_ids[offset:offset + page_size]:
-            cached_task = await get_cache(f"task:{task_id}")
-            if cached_task:
-                tasks.append(cached_task)
+        
+        if len(task_filter.status) == 0 and len(task_filter.priority) == 0: 
+            
+            # Fetch cached tasks
+            for task_id in task_ids[offset:offset + page_size]:
+                cached_task = await get_cache(f"task:{task_id}")
+                if cached_task:
+                    tasks.append(cached_task)
 
         # Fallback to DB if cache miss
         if len(tasks) < page_size:
