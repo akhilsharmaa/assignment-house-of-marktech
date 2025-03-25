@@ -68,7 +68,7 @@ async def view_all_tasks(db: db_dependency):
                     "id": db_task.id,
                     "title": db_task.title,
                     "description": db_task.description, 
-                    "isCompleted": db_task.is_completed, 
+                    "is_completed": db_task.is_completed, 
                     "created_at": db_task.created_at.isoformat(),  
                 }
                 tasks.append(task_data) 
@@ -113,14 +113,10 @@ async def delete_task(id: str, db: db_dependency):
             detail=f"Failed to delete task. {str(e)}"
         )
 
-
-class TaskBase(TaskBase):
-    id: int
-    
-@router.put("")
-async def edit_task(task: TaskBase, db: db_dependency):
+@router.put("/{task_id}")
+async def edit_task(task_id: str, task: TaskBase, db: db_dependency):
     try:
-        db_task = db.query(Task).filter(Task.id == task.id).first()
+        db_task = db.query(Task).filter(Task.id == task_id).first()
 
         if db_task is None:
             raise HTTPException(
@@ -128,24 +124,27 @@ async def edit_task(task: TaskBase, db: db_dependency):
                 detail="Task not found."
             )
 
+        # Update the task fields
         db_task.title = task.title
-        db_task.description = task.description 
+        db_task.description = task.description
         db_task.is_completed = task.is_completed 
-        
+
         db.commit()
         db.refresh(db_task)
 
-        # Update cache
+        # Prepare response data
         task_data = {
             "id": db_task.id,
             "title": db_task.title,
-            "description": db_task.description, 
-        } 
+            "description": db_task.description,
+            "is_completed": db_task.is_completed
+        }
 
         return JSONResponse(
-            status_code=200,
+            status_code=status.HTTP_200_OK,
             content={
-                "message": "Successfully edited the task."
+                "message": "Successfully edited the task.",
+                "task": task_data
             }
         )
 
