@@ -39,7 +39,7 @@ async def create_new_task(task: TaskBase,
         return JSONResponse(
             status_code=200,
             content={
-                "message": "Successfully added the task."
+                "message": "Successfully added the task.",
             }
         )
 
@@ -85,10 +85,11 @@ async def view_all_tasks(db: db_dependency):
             detail=f"Failed to fetch all tasks. Error: {str(e)}"
         )
 
-@router.delete("")
-async def delete_task(id: str, db: db_dependency):
+
+@router.delete("/{task_id}")
+async def edit_task(task_id: str, db: db_dependency):
     try:
-        db_task = db.query(Task).filter(Task.id == id).first()
+        db_task = db.query(Task).filter(Task.id == task_id).first()
 
         if db_task is None:
             raise HTTPException(
