@@ -1,8 +1,7 @@
 import os
-from os.path import join, dirname
-from dotenv import load_dotenv
+from os.path import join, dirname 
 from fastapi import Depends, FastAPI
-from router import task, users, auth
+from router import task
 from services.database import create_tables
 from fastapi.middleware.cors import CORSMiddleware
 from utils.logger import logger
@@ -18,9 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)    
-app.include_router(task.router)    
-app.include_router(users.router)  
+app.include_router(task.router)     
 
 create_tables()
 
